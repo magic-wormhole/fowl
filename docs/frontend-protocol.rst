@@ -64,12 +64,15 @@ This likely came from a corresponding use of ``kind: allocate-code`` (in another
 Input: ``kind: local``
 ----------------------
 
-This message asks ``fowld`` to start listening on a local port -- any subsequent connections on this local port cause the *remote* side to open a corresponding connection (possibly on a different port or protocol).
+This message asks ``fowld`` to listen locally, forwarding local connections to the other peer.
+That is, the other peer is running the daemon-style software. The other peer must enable the same service-name.If a ``remote_connect_port`` is specified, the invocation on the other peer must agree.Therefore, it is best to ONLY choose ports on your side, unless the protocol requires otherwise.If you can avoid choosing at all, a random port is assigned -- this is the most likely to succeed.
 
 Keys allowed in this message:
 
-- ``listen`` (required): a Twisted server-style endpoint string specifying where to listen locally
-- ``connect`` (required): a Twisted client-style endpoint string specifying what connection to open on the other end
+- ``name`` (required): unique name for this service
+- ``local_listen_port``: port to listen locally (or select randomly)
+- ``remote_connect_port``: port to connect to
+- ``bind_interface``: interface to bind the ``local_listen_port`` (defaut to ``localhost``)
 
 For example:
 
@@ -77,19 +80,17 @@ For example:
 
     {
         "kind": "local",
-        "listen": "tcp:8000:interface=localhost",
-        "connect": "tcp:localhost:80"
+        "name": "myapp",
+        "local_listen_port": 8000,
+        "bind_interface": "localhost",
     }
 
-In this example, we will open a listener on our machine on TCP port ``8000`` and interface ``localhost``.
-Whenever a new connection is opened on our machine, we will ask the other side to connect to port ``80`` on *their* notion of ``localhost``.
+In this example, we will open a listener on our machine on TCP port ``8000`` and interface ``localhost``. This port is associated with a service name ``myapp``.
+Every request to ``localhost:8000`` will be forwarded to the other peer.
 
-Remember that these can be anything that Twisted understands, including from installed plugins.
-**Be careful**: a malicious "other end" could cause all sorts of shenanigans.
-
-You are only limited to streaming endpoints (i.e. no UDP) but they do not have to be TCP.
-For example, one side could use ``unix:/tmp/socket`` to open a listener (or connection) on Unix-domain socket.
-With `txtorcon <https://meejah.ca/projects/txtorcon>`_ one could have ``onion:...`` Tor endpoints on either end.
+.. You are only limited to streaming endpoints (i.e. no UDP) but they do not have to be TCP.
+.. For example, one side could use ``unix:/tmp/socket`` to open a listener (or connection) on Unix-domain socket.
+.. With `txtorcon <https://meejah.ca/projects/txtorcon>`_ one could have ``onion:...`` Tor endpoints on either end.
 
 Once the listener is established, we'll issue a ``kind: listening`` output.
 
@@ -97,27 +98,28 @@ Once the listener is established, we'll issue a ``kind: listening`` output.
 Input: ``kind: remote``
 -----------------------
 
-This will cause ``fowld`` to request a listener on the *other* side.
-There is symmetry here: the same thing could be accomplished by that other side instead issuing a ``kind: local`` request.
+This message asks ``fowld`` to listen on the other peer, so the server-style software runs here.
+The other peer must enable the same service ``name``.Ports must agree.Therefore, it is best to ONLY choose ports on your side, unless the protocol requires otherwise.If you can avoid choosing at all, a random port is assigned -- this is the most likely to succeed.
 
 Keys allowed in this message:
 
-- ``listen`` (required): a Twisted server-style endpoint string specifying where to listen (on the other end).
-- ``connect`` (required): a Twisted client-style endpoint string specifying what to connect to (on this side) for each connection that happens on the other side.
+- ``name`` (required): unique name for this service
+- ``remote_listen_port``: port to listen on (or let peer select)
+- ``local_connect_port``: port to connect here on
+- ``connect_address``: address to connect here on
 
-To directly mirror the example from the ``local`` command:
+For example, to peer with the example above:
 
 .. code-block:: json
 
     {
         "kind": "remote",
-        "listen": "tcp:8000:interface=localhost",
-        "connect": "tcp:localhost:80"
+        "name": "myapp",
+        "local_connect_port": 80,
+        "connect_address": "localhost",
     }
 
-This will be a mirror-image of the other example.
-That is, we'll cause the far end to start listening on its TCP port ``8000`` on interface ``localhost``.
-Any connection to that will open a near-side connection to port 80 via TCP.
+Once the two peers are connected, any TCP request to ``localhost:8000`` **on the local side** will be forwarded to ``localhost:80`` **on the remote side**.
 
 The far-side ``fowld`` will issue a ``kind: listening`` message (on its side) when it has started listening.
 
@@ -141,10 +143,7 @@ If we did not hear back from the peer we exit with exit-status 1, otherwise exit
 Output: ``kind: listening``
 ---------------------------
 
-This message is issued by ``fowld`` when it has opened a listening socket on that side.
-
-So, if a ``kind: local`` had initiated the listening, this message would appear on that same side.
-If instead it was a ``kind: remote`` then it would appear on the far side.
+This message is issued by ``fowld`` when it has opened a listening socket on the local side.
 
 An example message:
 
@@ -152,8 +151,8 @@ An example message:
 
     {
         "kind": "listening",
-        "listen": "tcp:8080:interface=localhost",
-        "connect": "tcp:80"
+        "name": "myapp",
+        "listening_port": 8000,
     }
 
 Guidance for UX: the user should be made aware their machine is listening on a particular port / interface.
